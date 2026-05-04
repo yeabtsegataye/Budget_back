@@ -13,7 +13,7 @@ const statsRoutes = require('./routes/stats');
 const userRoutes = require('./routes/user');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = parseInt(process.env.PORT, 10) || 5000;
 
 // Security middleware
 app.use(helmet());
@@ -27,10 +27,21 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS
-const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'https://budget-front-jxuu.onrender.com', '*'];
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:5173',
+  'https://budget-front-jxuu.onrender.com',
+  'https://budget-front-fsmxigqzc-yeabtsegas-projects.vercel.app'
+];
 app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
 
 // Body parsing
@@ -139,7 +150,7 @@ mongoose.connect(process.env.MONGODB_URI, {
   console.log('Connected to MongoDB');
   
   // Start server
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);

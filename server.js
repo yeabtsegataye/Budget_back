@@ -27,7 +27,7 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // CORS
-const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'https://budget-front-jxuu.onrender.com','*'];
+const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', 'https://budget-front-jxuu.onrender.com', '*'];
 app.use(cors({
   origin: allowedOrigins,
   credentials: true
@@ -37,6 +37,55 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Root route - This fixes the "Route not found" error
+app.get('/', (req, res) => {
+  res.json({
+    status: 'success',
+    message: 'Budget Tracker API is running',
+    version: '1.0.0',
+    endpoints: {
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        logout: 'POST /api/auth/logout',
+        me: 'GET /api/auth/me'
+      },
+      transactions: {
+        getAll: 'GET /api/transactions',
+        getOne: 'GET /api/transactions/:id',
+        create: 'POST /api/transactions',
+        update: 'PUT /api/transactions/:id',
+        delete: 'DELETE /api/transactions/:id'
+      },
+      categories: {
+        getAll: 'GET /api/categories',
+        getOne: 'GET /api/categories/:id',
+        create: 'POST /api/categories',
+        update: 'PUT /api/categories/:id',
+        delete: 'DELETE /api/categories/:id'
+      },
+      stats: {
+        summary: 'GET /api/stats/summary',
+        monthly: 'GET /api/stats/monthly',
+        yearly: 'GET /api/stats/yearly'
+      },
+      user: {
+        profile: 'GET /api/user/profile',
+        update: 'PUT /api/user/profile',
+        changePassword: 'PUT /api/user/change-password'
+      },
+      health: 'GET /health'
+    },
+    docs: 'For more information, visit the API documentation',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
@@ -44,20 +93,41 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/user', userRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+// 404 handler for undefined routes
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found',
+    message: `Cannot ${req.method} ${req.originalUrl}`,
+    availableEndpoints: {
+      root: 'GET /',
+      health: 'GET /health',
+      auth: '/api/auth/*',
+      transactions: '/api/transactions/*',
+      categories: '/api/categories/*',
+      stats: '/api/stats/*',
+      user: '/api/user/*'
+    }
+  });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('Error:', err.stack);
+  
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({ error: err.message });
+  }
+  
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  
+  if (err.code === 11000) {
+    return res.status(409).json({ error: 'Duplicate key error' });
+  }
+  
   res.status(500).json({ error: 'Something went wrong!' });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
 });
 
 // Connect to MongoDB
@@ -71,6 +141,8 @@ mongoose.connect(process.env.MONGODB_URI, {
   // Start server
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
   });
 })
 .catch((error) => {
@@ -82,5 +154,13 @@ mongoose.connect(process.env.MONGODB_URI, {
 process.on('SIGINT', async () => {
   console.log('Shutting down gracefully...');
   await mongoose.connection.close();
+  console.log('MongoDB connection closed');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('Received SIGTERM signal, shutting down gracefully...');
+  await mongoose.connection.close();
+  console.log('MongoDB connection closed');
   process.exit(0);
 });

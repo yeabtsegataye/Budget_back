@@ -95,7 +95,19 @@ router.post('/login', async (req, res) => {
 router.post('/verify', verifyToken, (req, res) => {
   res.json({ message: 'Token verified', user: req.user });
 });
-
+// GET /api/auth/me - Get current user (FIX: Add this endpoint)
+router.get('/me', verifyToken, async (req, res) => {
+  try {
+    const user = await User.findOne({ uid: req.user.uid }).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 // Forget password - send reset email
 router.post('/forgot-password', async (req, res) => {
   try {

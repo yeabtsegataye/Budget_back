@@ -52,10 +52,10 @@ router.get('/:uid', async (req, res) => {
 // POST /api/banks - Create bank account
 router.post('/', async (req, res) => {
   try {
-    const { uid, name, icon, color, initialBalance } = req.body;
+    const { uid, name, icon, color, initialBalance, currency } = req.body;
     if (req.user.uid !== uid) return res.status(403).json({ error: 'Forbidden' });
 
-    const bank = new BankAccount({ uid, name, icon, color, initialBalance: parseFloat(initialBalance) || 0 });
+    const bank = new BankAccount({ uid, name, icon, color, initialBalance: parseFloat(initialBalance) || 0, currency: currency || 'ETB' });
     await bank.save();
     res.status(201).json({ ...bank.toObject(), currentBalance: bank.initialBalance });
   } catch (error) {
@@ -68,7 +68,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, icon, color, initialBalance } = req.body;
+    const { name, icon, color, initialBalance, currency } = req.body;
 
     const bank = await BankAccount.findById(id);
     if (!bank) return res.status(404).json({ error: 'Bank account not found' });
@@ -78,6 +78,7 @@ router.put('/:id', async (req, res) => {
     if (icon !== undefined) bank.icon = icon;
     if (color !== undefined) bank.color = color;
     if (initialBalance !== undefined) bank.initialBalance = parseFloat(initialBalance);
+    if (currency !== undefined) bank.currency = currency;
 
     await bank.save();
     res.json(bank);

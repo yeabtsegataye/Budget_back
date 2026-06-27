@@ -6,6 +6,7 @@ const bankAccountSchema = new mongoose.Schema({
   icon: { type: String, default: '🏦' },
   color: { type: String, default: '#4A90E2' },
   initialBalance: { type: Number, default: 0 },
+  currency: { type: String, default: 'ETB' },
   createdAt: { type: Date, default: Date.now }
 });
 

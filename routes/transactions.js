@@ -53,7 +53,7 @@ router.get('/:uid', async (req, res) => {
 // POST /api/transactions - Add new transaction
 router.post('/', async (req, res) => {
   try {
-    const { uid, type, amount, category, date, note } = req.body;
+    const { uid, type, amount, category, date, note, bankId } = req.body;
 
     if (req.user.uid !== uid) {
       return res.status(403).json({ error: 'Forbidden' });
@@ -65,7 +65,8 @@ router.post('/', async (req, res) => {
       amount: parseFloat(amount),
       category,
       date: new Date(date),
-      note: note || ''
+      note: note || '',
+      bankId: bankId || null
     });
 
     await transaction.save();
@@ -80,7 +81,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { type, amount, category, date, note } = req.body;
+    const { type, amount, category, date, note, bankId } = req.body;
 
     const transaction = await Transaction.findById(id);
     if (!transaction) {
@@ -96,6 +97,7 @@ router.put('/:id', async (req, res) => {
     transaction.category = category;
     transaction.date = new Date(date);
     transaction.note = note || '';
+    transaction.bankId = bankId || null;
 
     await transaction.save();
     res.json(transaction);

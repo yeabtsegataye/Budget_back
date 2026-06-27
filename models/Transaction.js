@@ -7,6 +7,7 @@ const transactionSchema = new mongoose.Schema({
   category: { type: String, required: true },
   date: { type: Date, required: true },
   note: { type: String, default: '' },
+  bankId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 

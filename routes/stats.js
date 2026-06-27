@@ -2,15 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
 const Transaction = require('../models/Transaction');
+const BankAccount = require('../models/BankAccount');
 
-// Apply auth middleware to all routes
 router.use(verifyToken);
 
 // GET /api/stats/:uid - Get aggregated stats for charts
 router.get('/:uid', async (req, res) => {
   try {
     const { uid } = req.params;
-    const { range = 'monthly' } = req.query;
+    const { range = 'monthly', startDate, endDate } = req.query;
 
     if (req.user.uid !== uid) {
       return res.status(403).json({ error: 'Forbidden' });
@@ -21,38 +21,45 @@ router.get('/:uid', async (req, res) => {
     const currentYear = new Date(now.getFullYear(), 0, 1);
 
     let rangeStart = new Date(0);
-    switch (range) {
-      case 'daily':
-        rangeStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        break;
-      case 'weekly':
-        rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case 'monthly':
-        rangeStart = currentMonth;
-        break;
-      case 'yearly':
-        rangeStart = currentYear;
-        break;
-      case 'all':
-      default:
-        rangeStart = new Date(0);
-        break;
+    let rangeEnd = now;
+
+    // Custom date range overrides preset range
+    if (startDate && endDate) {
+      rangeStart = new Date(startDate);
+      rangeEnd = new Date(endDate);
+      rangeEnd.setHours(23, 59, 59, 999);
+    } else {
+      switch (range) {
+        case 'daily':
+          rangeStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        case 'weekly':
+          rangeStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'monthly':
+          rangeStart = currentMonth;
+          break;
+        case 'yearly':
+          rangeStart = currentYear;
+          break;
+        case 'all':
+        default:
+          rangeStart = new Date(0);
+          break;
+      }
     }
 
-    const rangeMatch = range === 'all' ? { uid } : { uid, date: { $gte: rangeStart } };
-    const last6Months = new Date(now.getFullYear(), now.getMonth() - 6, 1);
-    const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const isAll = !startDate && !endDate && range === 'all';
+    const rangeMatch = isAll
+      ? { uid }
+      : { uid, date: { $gte: rangeStart, $lte: rangeEnd } };
+
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
     // Selected range income and expenses
     const rangeStats = await Transaction.aggregate([
       { $match: rangeMatch },
-      {
-        $group: {
-          _id: '$type',
-          total: { $sum: '$amount' }
-        }
-      }
+      { $group: { _id: '$type', total: { $sum: '$amount' } } }
     ]);
 
     const income = rangeStats.find(s => s._id === 'income')?.total || 0;
@@ -61,12 +68,7 @@ router.get('/:uid', async (req, res) => {
     // Total balance (all time)
     const totalStats = await Transaction.aggregate([
       { $match: { uid } },
-      {
-        $group: {
-          _id: '$type',
-          total: { $sum: '$amount' }
-        }
-      }
+      { $group: { _id: '$type', total: { $sum: '$amount' } } }
     ]);
 
     const totalIncome = totalStats.find(s => s._id === 'income')?.total || 0;
@@ -74,101 +76,68 @@ router.get('/:uid', async (req, res) => {
     const totalBalance = totalIncome - totalExpenses;
 
     // Last month comparison
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthStats = await Transaction.aggregate([
       { $match: { uid, date: { $gte: lastMonth, $lt: currentMonth } } },
-      {
-        $group: {
-          _id: '$type',
-          total: { $sum: '$amount' }
-        }
-      }
+      { $group: { _id: '$type', total: { $sum: '$amount' } } }
     ]);
 
     const lastMonthIncome = lastMonthStats.find(s => s._id === 'income')?.total || 0;
     const lastMonthExpenses = lastMonthStats.find(s => s._id === 'expense')?.total || 0;
 
-    // Savings rate
     const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0;
 
     // Expense breakdown by category
     const expenseByCategory = await Transaction.aggregate([
       { $match: { ...rangeMatch, type: 'expense' } },
-      {
-        $group: {
-          _id: '$category',
-          total: { $sum: '$amount' }
-        }
-      },
+      { $group: { _id: '$category', total: { $sum: '$amount' } } },
       { $sort: { total: -1 } }
     ]);
 
     // Income breakdown by category
     const incomeByCategory = await Transaction.aggregate([
       { $match: { ...rangeMatch, type: 'income' } },
-      {
-        $group: {
-          _id: '$category',
-          total: { $sum: '$amount' }
-        }
-      },
+      { $group: { _id: '$category', total: { $sum: '$amount' } } },
       { $sort: { total: -1 } }
     ]);
 
-    // Spending trend for selected range
+    // Spending trend
     const spendingTrend = await Transaction.aggregate([
       { $match: { ...rangeMatch, type: 'expense' } },
       {
         $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$date' }
-          },
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
           total: { $sum: '$amount' }
         }
       },
       { $sort: { '_id': 1 } }
     ]);
 
-    // Daily spending for selected range
+    // Daily spending
     const dailySpending = await Transaction.aggregate([
       { $match: { ...rangeMatch, type: 'expense' } },
       {
         $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$date' }
-          },
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
           total: { $sum: '$amount' }
         }
       },
       { $sort: { '_id': 1 } }
     ]);
 
-    // Income vs expenses over the selected range
+    // Monthly comparison
     const monthlyComparison = await Transaction.aggregate([
       { $match: rangeMatch },
       {
         $group: {
-          _id: {
-            year: { $year: '$date' },
-            month: { $month: '$date' },
-            type: '$type'
-          },
+          _id: { year: { $year: '$date' }, month: { $month: '$date' }, type: '$type' },
           total: { $sum: '$amount' }
         }
       },
       {
         $group: {
           _id: { year: '$_id.year', month: '$_id.month' },
-          income: {
-            $sum: {
-              $cond: [{ $eq: ['$_id.type', 'income'] }, '$total', 0]
-            }
-          },
-          expenses: {
-            $sum: {
-              $cond: [{ $eq: ['$_id.type', 'expense'] }, '$total', 0]
-            }
-          }
+          income: { $sum: { $cond: [{ $eq: ['$_id.type', 'income'] }, '$total', 0] } },
+          expenses: { $sum: { $cond: [{ $eq: ['$_id.type', 'expense'] }, '$total', 0] } }
         }
       },
       {
@@ -182,32 +151,47 @@ router.get('/:uid', async (req, res) => {
       { $sort: { month: 1 } }
     ]);
 
-    // Top spending categories for selected range
+    // Top spending categories
     const topCategories = await Transaction.aggregate([
       { $match: { ...rangeMatch, type: 'expense' } },
-      {
-        $group: {
-          _id: '$category',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      },
+      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } },
       { $sort: { total: -1 } },
       { $limit: 5 }
     ]);
 
-    // Weekly spending pattern for selected range
+    // Weekly pattern
     const weeklyPattern = await Transaction.aggregate([
       { $match: { ...rangeMatch, type: 'expense' } },
-      {
-        $group: {
-          _id: { $dayOfWeek: '$date' },
-          total: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      },
+      { $group: { _id: { $dayOfWeek: '$date' }, total: { $sum: '$amount' }, count: { $sum: 1 } } },
       { $sort: { '_id': 1 } }
     ]);
+
+    // Bank account balances
+    const banks = await BankAccount.find({ uid }).sort({ createdAt: 1 });
+    const bankIds = banks.map(b => b._id.toString());
+    const bankTxStats = await Transaction.aggregate([
+      { $match: { uid, bankId: { $in: bankIds } } },
+      { $group: { _id: { bankId: '$bankId', type: '$type' }, total: { $sum: '$amount' } } }
+    ]);
+
+    const bankTxMap = {};
+    bankTxStats.forEach(s => {
+      const key = s._id.bankId;
+      if (!bankTxMap[key]) bankTxMap[key] = { income: 0, expense: 0 };
+      bankTxMap[key][s._id.type] = s.total;
+    });
+
+    const bankBalances = banks.map(b => {
+      const id = b._id.toString();
+      const { income: bi = 0, expense: be = 0 } = bankTxMap[id] || {};
+      return {
+        _id: id,
+        name: b.name,
+        icon: b.icon,
+        color: b.color,
+        currentBalance: b.initialBalance + bi - be
+      };
+    });
 
     res.json({
       balance: income - expenses,
@@ -223,7 +207,8 @@ router.get('/:uid', async (req, res) => {
       dailySpending,
       monthlyComparison,
       topCategories,
-      weeklyPattern
+      weeklyPattern,
+      bankBalances
     });
   } catch (error) {
     console.error('Error fetching stats:', error);

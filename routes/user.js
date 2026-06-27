@@ -68,7 +68,7 @@ router.put('/:uid', async (req, res) => {
     }
 
     // Only allow updating specific fields
-    const allowedFields = ['reminderSettings', 'currency', 'theme'];
+    const allowedFields = ['reminderSettings', 'currency', 'theme','displayName'];
     const filteredUpdates = {};
     Object.keys(updates).forEach(key => {
       if (allowedFields.includes(key)) {

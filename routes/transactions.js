@@ -67,8 +67,8 @@ router.post('/', async (req, res) => {
       date: new Date(date),
       note: note || '',
       bankId: bankId || null,
-      isRecurring: isRecurring || false,
-      recurringFrequency: recurringFrequency || null,
+      isRecurring: Boolean(isRecurring),
+      recurringFrequency: Boolean(isRecurring) ? (recurringFrequency || null) : null,
       transferToBankId: transferToBankId || null
     });
 
@@ -101,8 +101,8 @@ router.put('/:id', async (req, res) => {
     transaction.date = new Date(date);
     transaction.note = note || '';
     transaction.bankId = bankId || null;
-    transaction.isRecurring = isRecurring || false;
-    transaction.recurringFrequency = recurringFrequency || null;
+    transaction.isRecurring = Boolean(isRecurring);
+    transaction.recurringFrequency = Boolean(isRecurring) ? (recurringFrequency || null) : null;
     transaction.transferToBankId = transferToBankId || null;
 
     await transaction.save();

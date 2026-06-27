@@ -9,7 +9,14 @@ const transactionSchema = new mongoose.Schema({
   note: { type: String, default: '' },
   bankId: { type: String, default: null },
   isRecurring: { type: Boolean, default: false },
-  recurringFrequency: { type: String, enum: ['daily', 'weekly', 'monthly', 'yearly'], default: null },
+  recurringFrequency: {
+    type: String,
+    enum: {
+      values: ['daily', 'weekly', 'monthly', 'yearly', null],
+      message: '{VALUE} is not a valid recurring frequency'
+    },
+    default: null
+  },
   transferToBankId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });

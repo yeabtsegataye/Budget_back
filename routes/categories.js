@@ -26,7 +26,7 @@ router.get('/:uid', async (req, res) => {
 // POST /api/categories - Create new category
 router.post('/', async (req, res) => {
   try {
-    const { uid, name, icon, color, type } = req.body;
+    const { uid, name, icon, color, type, budgetLimit } = req.body;
 
     if (req.user.uid !== uid) {
       return res.status(403).json({ error: 'Forbidden' });
@@ -38,7 +38,8 @@ router.post('/', async (req, res) => {
       icon,
       color,
       type,
-      isDefault: false
+      isDefault: false,
+      budgetLimit: budgetLimit !== undefined ? parseFloat(budgetLimit) : null
     });
 
     await category.save();
@@ -71,6 +72,7 @@ router.put('/:id', async (req, res) => {
     category.name = name;
     category.icon = icon;
     category.color = color;
+    if (req.body.budgetLimit !== undefined) category.budgetLimit = req.body.budgetLimit !== null ? parseFloat(req.body.budgetLimit) : null;
 
     await category.save();
     res.json(category);

@@ -53,7 +53,7 @@ router.get('/:uid', async (req, res) => {
 // POST /api/transactions - Add new transaction
 router.post('/', async (req, res) => {
   try {
-    const { uid, type, amount, category, date, note, bankId } = req.body;
+    const { uid, type, amount, category, date, note, bankId, isRecurring, recurringFrequency, transferToBankId } = req.body;
 
     if (req.user.uid !== uid) {
       return res.status(403).json({ error: 'Forbidden' });
@@ -63,10 +63,13 @@ router.post('/', async (req, res) => {
       uid,
       type,
       amount: parseFloat(amount),
-      category,
+      category: category || (type === 'transfer' ? 'Transfer' : category),
       date: new Date(date),
       note: note || '',
-      bankId: bankId || null
+      bankId: bankId || null,
+      isRecurring: isRecurring || false,
+      recurringFrequency: recurringFrequency || null,
+      transferToBankId: transferToBankId || null
     });
 
     await transaction.save();
@@ -81,7 +84,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { type, amount, category, date, note, bankId } = req.body;
+    const { type, amount, category, date, note, bankId, isRecurring, recurringFrequency, transferToBankId } = req.body;
 
     const transaction = await Transaction.findById(id);
     if (!transaction) {
@@ -94,10 +97,13 @@ router.put('/:id', async (req, res) => {
 
     transaction.type = type;
     transaction.amount = parseFloat(amount);
-    transaction.category = category;
+    transaction.category = category || (type === 'transfer' ? 'Transfer' : category);
     transaction.date = new Date(date);
     transaction.note = note || '';
     transaction.bankId = bankId || null;
+    transaction.isRecurring = isRecurring || false;
+    transaction.recurringFrequency = recurringFrequency || null;
+    transaction.transferToBankId = transferToBankId || null;
 
     await transaction.save();
     res.json(transaction);

@@ -56,18 +56,29 @@ router.get('/:uid', async (req, res) => {
 
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
-    // Selected range income and expenses
+    // Selected range income and expenses (exclude transfers)
     const rangeStats = await Transaction.aggregate([
-      { $match: rangeMatch },
+      { $match: { ...rangeMatch, type: { $ne: 'transfer' } } },
       { $group: { _id: '$type', total: { $sum: '$amount' } } }
     ]);
 
     const income = rangeStats.find(s => s._id === 'income')?.total || 0;
     const expenses = rangeStats.find(s => s._id === 'expense')?.total || 0;
 
-    // Total balance (all time)
+    // Previous period computation
+    const periodLen = isAll ? 0 : rangeEnd - rangeStart;
+    const prevStart = isAll ? new Date(0) : new Date(rangeStart.getTime() - periodLen);
+    const prevEnd = isAll ? new Date(0) : new Date(rangeStart.getTime() - 1);
+    const prevStats = isAll ? [] : await Transaction.aggregate([
+      { $match: { uid, type: { $ne: 'transfer' }, date: { $gte: prevStart, $lte: prevEnd } } },
+      { $group: { _id: '$type', total: { $sum: '$amount' } } }
+    ]);
+    const prevIncome = prevStats.find(s => s._id === 'income')?.total || 0;
+    const prevExpenses = prevStats.find(s => s._id === 'expense')?.total || 0;
+
+    // Total balance (all time, exclude transfers)
     const totalStats = await Transaction.aggregate([
-      { $match: { uid } },
+      { $match: { uid, type: { $ne: 'transfer' } } },
       { $group: { _id: '$type', total: { $sum: '$amount' } } }
     ]);
 
@@ -75,9 +86,9 @@ router.get('/:uid', async (req, res) => {
     const totalExpenses = totalStats.find(s => s._id === 'expense')?.total || 0;
     const totalBalance = totalIncome - totalExpenses;
 
-    // Last month comparison
+    // Last month comparison (exclude transfers)
     const lastMonthStats = await Transaction.aggregate([
-      { $match: { uid, date: { $gte: lastMonth, $lt: currentMonth } } },
+      { $match: { uid, type: { $ne: 'transfer' }, date: { $gte: lastMonth, $lt: currentMonth } } },
       { $group: { _id: '$type', total: { $sum: '$amount' } } }
     ]);
 
@@ -126,7 +137,7 @@ router.get('/:uid', async (req, res) => {
 
     // Monthly comparison
     const monthlyComparison = await Transaction.aggregate([
-      { $match: rangeMatch },
+      { $match: { ...rangeMatch, type: { $ne: 'transfer' } } },
       {
         $group: {
           _id: { year: { $year: '$date' }, month: { $month: '$date' }, type: '$type' },
@@ -166,30 +177,42 @@ router.get('/:uid', async (req, res) => {
       { $sort: { '_id': 1 } }
     ]);
 
-    // Bank account balances
+    // Bank account balances (including transfers)
     const banks = await BankAccount.find({ uid }).sort({ createdAt: 1 });
     const bankIds = banks.map(b => b._id.toString());
-    const bankTxStats = await Transaction.aggregate([
-      { $match: { uid, bankId: { $in: bankIds } } },
-      { $group: { _id: { bankId: '$bankId', type: '$type' }, total: { $sum: '$amount' } } }
-    ]);
+    const allBankTx = await Transaction.find({
+      uid,
+      $or: [
+        { bankId: { $in: bankIds } },
+        { transferToBankId: { $in: bankIds } }
+      ]
+    });
 
-    const bankTxMap = {};
-    bankTxStats.forEach(s => {
-      const key = s._id.bankId;
-      if (!bankTxMap[key]) bankTxMap[key] = { income: 0, expense: 0 };
-      bankTxMap[key][s._id.type] = s.total;
+    const bankBalMap = {};
+    bankIds.forEach(id => { bankBalMap[id] = 0; });
+    allBankTx.forEach(tx => {
+      if (tx.type === 'income' && bankBalMap[tx.bankId] !== undefined) {
+        bankBalMap[tx.bankId] += tx.amount;
+      } else if (tx.type === 'expense' && bankBalMap[tx.bankId] !== undefined) {
+        bankBalMap[tx.bankId] -= tx.amount;
+      } else if (tx.type === 'transfer') {
+        if (tx.bankId && bankBalMap[tx.bankId] !== undefined) {
+          bankBalMap[tx.bankId] -= tx.amount;
+        }
+        if (tx.transferToBankId && bankBalMap[tx.transferToBankId] !== undefined) {
+          bankBalMap[tx.transferToBankId] += tx.amount;
+        }
+      }
     });
 
     const bankBalances = banks.map(b => {
       const id = b._id.toString();
-      const { income: bi = 0, expense: be = 0 } = bankTxMap[id] || {};
       return {
         _id: id,
         name: b.name,
         icon: b.icon,
         color: b.color,
-        currentBalance: b.initialBalance + bi - be
+        currentBalance: b.initialBalance + bankBalMap[id]
       };
     });
 
@@ -198,6 +221,8 @@ router.get('/:uid', async (req, res) => {
       totalBalance,
       income,
       expenses,
+      prevIncome,
+      prevExpenses,
       lastMonthIncome,
       lastMonthExpenses,
       savingsRate,

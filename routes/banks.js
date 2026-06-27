@@ -13,34 +13,40 @@ router.get('/:uid', async (req, res) => {
     if (req.user.uid !== uid) return res.status(403).json({ error: 'Forbidden' });
 
     const banks = await BankAccount.find({ uid }).sort({ createdAt: 1 });
-
-    // Compute balance for each bank from transactions
     const bankIds = banks.map(b => b._id.toString());
-    const txStats = await Transaction.aggregate([
-      { $match: { uid, bankId: { $in: bankIds } } },
-      {
-        $group: {
-          _id: { bankId: '$bankId', type: '$type' },
-          total: { $sum: '$amount' }
+
+    // Fetch all transactions affecting these banks (including transfers)
+    const allTx = await Transaction.find({
+      uid,
+      $or: [
+        { bankId: { $in: bankIds } },
+        { transferToBankId: { $in: bankIds } }
+      ]
+    });
+
+    // Compute balance per bank
+    const balanceMap = {};
+    bankIds.forEach(id => { balanceMap[id] = 0; });
+
+    allTx.forEach(tx => {
+      if (tx.type === 'income' && balanceMap[tx.bankId] !== undefined) {
+        balanceMap[tx.bankId] += tx.amount;
+      } else if (tx.type === 'expense' && balanceMap[tx.bankId] !== undefined) {
+        balanceMap[tx.bankId] -= tx.amount;
+      } else if (tx.type === 'transfer') {
+        if (tx.bankId && balanceMap[tx.bankId] !== undefined) {
+          balanceMap[tx.bankId] -= tx.amount; // outgoing
+        }
+        if (tx.transferToBankId && balanceMap[tx.transferToBankId] !== undefined) {
+          balanceMap[tx.transferToBankId] += tx.amount; // incoming
         }
       }
-    ]);
-
-    const txMap = {};
-    txStats.forEach(s => {
-      const key = s._id.bankId;
-      if (!txMap[key]) txMap[key] = { income: 0, expense: 0 };
-      txMap[key][s._id.type] = s.total;
     });
 
-    const banksWithBalance = banks.map(b => {
-      const id = b._id.toString();
-      const { income = 0, expense = 0 } = txMap[id] || {};
-      return {
-        ...b.toObject(),
-        currentBalance: b.initialBalance + income - expense
-      };
-    });
+    const banksWithBalance = banks.map(b => ({
+      ...b.toObject(),
+      currentBalance: b.initialBalance + balanceMap[b._id.toString()]
+    }));
 
     res.json(banksWithBalance);
   } catch (error) {

@@ -6,7 +6,8 @@ const categorySchema = new mongoose.Schema({
   icon: { type: String, required: true },
   color: { type: String, required: true },
   isDefault: { type: Boolean, default: false },
-  type: { type: String, enum: ['income', 'expense'], required: true }
+  type: { type: String, enum: ['income', 'expense'], required: true },
+  budgetLimit: { type: Number, default: null }
 });
 
 // Indexes

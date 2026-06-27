@@ -12,6 +12,7 @@ const categoryRoutes = require('./routes/categories');
 const statsRoutes = require('./routes/stats');
 const userRoutes = require('./routes/user');
 const bankRoutes = require('./routes/banks');
+const savingsRoutes = require('./routes/savings');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 5000;
@@ -105,6 +106,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/banks', bankRoutes);
+app.use('/api/savings', savingsRoutes);
 
 // 404 handler for undefined routes
 app.use('*', (req, res) => {

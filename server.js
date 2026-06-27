@@ -17,14 +17,17 @@ const savingsRoutes = require('./routes/savings');
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 5000;
 
+// Trust Render.com / reverse proxy X-Forwarded-For headers
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 app.use(compression());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
 });
 app.use(limiter);
 
